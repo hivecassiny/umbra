@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxpool/umbra"
+	"github.com/hivecassiny/umbra"
 )
 
 // Server example

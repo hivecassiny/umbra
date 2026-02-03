@@ -1,4 +1,4 @@
-module github.com/fxpool/umbra
+module github.com/hivecassiny/umbra
 
 go 1.17
 

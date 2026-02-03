@@ -18,7 +18,7 @@ A secure network communication library for Go that provides end-to-end encrypted
 ## Installation
 
 ```bash
-go get github.com/fxpool/umbra
+go get github.com/hivecassiny/umbra
 ```
 
 ## Quick Start
@@ -30,7 +30,7 @@ package main
 
 import (
     "fmt"
-    "github.com/fxpool/umbra"
+    "github.com/hivecassiny/umbra"
     "log"
 )
 
@@ -84,7 +84,7 @@ package main
 import (
     "crypto/elliptic"
     "fmt"
-    "github.com/fxpool/umbra"
+    "github.com/hivecassiny/umbra"
     "log"
     "time"
 )

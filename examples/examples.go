@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/fxpool/umbra"
+	"github.com/hivecassiny/umbra"
 )
 
 // Example 1: Using fixed key pairs (server and client use pre-generated keys)
