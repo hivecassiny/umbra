@@ -51,6 +51,9 @@ type ECCConn struct {
 	obfuscator         obfuscator // Interface for different obfuscation strategies
 	obfuscatorInit     sync.Once
 
+	// Compression component
+	compressor compressor
+
 	// Buffers for performance optimization
 	readBuffer  *sync.Pool
 	writeBuffer *sync.Pool
@@ -93,6 +96,15 @@ func NewConn(conn net.Conn, config *Config, isClient bool) (*ECCConn, error) {
 		eccConn.obfuscationEnabled = true
 		eccConn.obfuscationMode = config.Obfuscation.Mode
 		eccConn.obfuscationConfig = config.Obfuscation
+	}
+
+	// Setup compression
+	if config.Compression != nil && config.Compression.Enabled {
+		comp, err := createCompressor(config.Compression)
+		if err != nil {
+			return nil, err
+		}
+		eccConn.compressor = comp
 	}
 
 	// Key management: use provided private key or generate ephemeral key
@@ -335,6 +347,14 @@ func (ec *ECCConn) Read(b []byte) (int, error) {
 	}
 	ec.recvCounter++
 
+	// Decompress if enabled
+	if ec.compressor != nil {
+		plaintext, err = ec.compressor.decompress(plaintext)
+		if err != nil {
+			return 0, err
+		}
+	}
+
 	// Copy what we can to the buffer
 	n := copy(b, plaintext)
 	// Store any remaining data for next read
@@ -349,9 +369,21 @@ func (ec *ECCConn) Read(b []byte) (int, error) {
 // The nonce is updated for each message to ensure uniqueness.
 func (ec *ECCConn) Write(b []byte) (int, error) {
 	ec.writeMu.Lock()
+
+	// Compress if enabled
+	data := b
+	if ec.compressor != nil {
+		compressed, err := ec.compressor.compress(b)
+		if err != nil {
+			ec.writeMu.Unlock()
+			return 0, err
+		}
+		data = compressed
+	}
+
 	// Update nonce and encrypt
 	binary.BigEndian.PutUint64(ec.sendNonce[4:], ec.sendCounter)
-	encrypted := ec.sendAEAD.Seal(nil, ec.sendNonce, b, nil)
+	encrypted := ec.sendAEAD.Seal(nil, ec.sendNonce, data, nil)
 	ec.sendCounter++
 
 	// Initialize obfuscator if needed (lazy initialization for performance)

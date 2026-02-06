@@ -20,6 +20,7 @@ type Config struct {
 	PublicKey       *ecdsa.PublicKey
 	UseEphemeralKey bool
 	Obfuscation     *ObfuscationConfig // Obfuscation configuration
+	Compression     *CompressionConfig // Compression configuration
 	TLS             *TLSConfig         // TLS configuration for advanced obfuscation
 }
 
