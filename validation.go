@@ -116,16 +116,16 @@ func validateObfuscationConfig(config *Config, isServer bool) error {
 			return fmt.Errorf(`advanced obfuscation mode requires TLS configuration
 
   For SERVER, you need:
-    config.TLS = &fxeccsocket.TLSConfig{
+    config.TLS = &umbra.TLSConfig{
         CertPEM: "-----BEGIN CERTIFICATE-----...",
         KeyPEM:  "-----BEGIN PRIVATE KEY-----...",
     }
   
   To generate a self-signed certificate:
-    certPEM, keyPEM, err := fxeccsocket.GenerateSelfSignedCert([]string{"pool.yoursite.com"})
+    certPEM, keyPEM, err := umbra.GenerateSelfSignedCert([]string{"pool.yoursite.com"})
   
   For CLIENT, you need:
-    config.TLS = &fxeccsocket.TLSConfig{
+    config.TLS = &umbra.TLSConfig{
         ServerName: "pool.yoursite.com",  // Must match server's domain
         SkipVerify: true,                 // For self-signed certs
     }`)
@@ -137,12 +137,12 @@ func validateObfuscationConfig(config *Config, isServer bool) error {
 				return fmt.Errorf(`server advanced obfuscation requires TLS certificate and key
 
   Generate a self-signed certificate:
-    certPEM, keyPEM, err := fxeccsocket.GenerateSelfSignedCert([]string{"pool.yoursite.com"})
+    certPEM, keyPEM, err := umbra.GenerateSelfSignedCert([]string{"pool.yoursite.com"})
     if err != nil {
         log.Fatal(err)
     }
     
-    config.TLS = &fxeccsocket.TLSConfig{
+    config.TLS = &umbra.TLSConfig{
         CertPEM: certPEM,
         KeyPEM:  keyPEM,
     }
@@ -160,7 +160,7 @@ func validateObfuscationConfig(config *Config, isServer bool) error {
   This MUST match the server's certificate domain.
   
   Example:
-    config.TLS = &fxeccsocket.TLSConfig{
+    config.TLS = &umbra.TLSConfig{
         ServerName: "pool.yoursite.com",
         SkipVerify: true,  // For self-signed certificates
     }`)
@@ -180,7 +180,7 @@ func ValidateAndExplain(config *Config, isServer bool, verbose bool) error {
 	}
 
 	if verbose && config.Obfuscation != nil && config.Obfuscation.Enabled {
-		fmt.Println("=== FxEccSocket Configuration Summary ===")
+		fmt.Println("=== Umbra Configuration Summary ===")
 		fmt.Printf("Obfuscation Level: %s\n", obfuscationLevelName(config.Obfuscation.Level))
 		fmt.Printf("Obfuscation Mode: %s\n", obfuscationModeName(config.Obfuscation.Mode))
 

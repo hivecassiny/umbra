@@ -140,7 +140,7 @@ func wrapServerTLS(conn net.Conn, config *TLSConfig) (net.Conn, error) {
 //
 // Example:
 //
-//	certPEM, keyPEM, err := fxeccsocket.GenerateSelfSignedCert([]string{"pool.example.com", "192.168.1.100"})
+//	certPEM, keyPEM, err := umbra.GenerateSelfSignedCert([]string{"pool.example.com", "192.168.1.100"})
 func GenerateSelfSignedCert(hosts []string) (certPEM, keyPEM string, err error) {
 	// Generate RSA private key
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -157,7 +157,7 @@ func GenerateSelfSignedCert(hosts []string) (certPEM, keyPEM string, err error) 
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"FxEccSocket"},
+			Organization: []string{"Umbra"},
 			CommonName:   hosts[0],
 		},
 		NotBefore:             time.Now(),
@@ -215,7 +215,7 @@ func GenerateSelfSignedCertECDSA(hosts []string) (certPEM, keyPEM string, err er
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"FxEccSocket"},
+			Organization: []string{"Umbra"},
 			CommonName:   hosts[0],
 		},
 		NotBefore:             time.Now(),

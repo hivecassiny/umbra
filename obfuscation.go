@@ -63,7 +63,6 @@ type HTTPObfuscator struct {
 	minDelay     time.Duration
 	maxDelay     time.Duration
 	headerBuffer *bytes.Buffer
-	chunkPool    *sync.Pool
 }
 
 // RandomObfuscator implements random padding obfuscation
@@ -96,9 +95,6 @@ func newHTTPObfuscator(config *ObfuscationConfig, isClient bool) *HTTPObfuscator
 	obf := &HTTPObfuscator{
 		isClient:     isClient,
 		headerBuffer: bytes.NewBuffer(nil),
-		chunkPool: &sync.Pool{
-			New: func() interface{} { return make([]byte, 0, 128) },
-		},
 	}
 
 	// Set delays
@@ -119,6 +115,7 @@ func newHTTPObfuscator(config *ObfuscationConfig, isClient bool) *HTTPObfuscator
 			"Content-Type: application/octet-stream\r\n",
 			"Accept: */*\r\n",
 			"Connection: keep-alive\r\n",
+			"Transfer-Encoding: chunked\r\n",
 		}
 	} else {
 		obf.headers = []string{
@@ -140,11 +137,6 @@ func (h *HTTPObfuscator) obfuscate(data []byte) ([]byte, error) {
 	// Write headers
 	for _, header := range h.headers {
 		h.headerBuffer.WriteString(header)
-	}
-
-	// Add Content-Length for client requests
-	if h.isClient && strings.HasPrefix(h.headers[0], "POST") {
-		h.headerBuffer.WriteString(fmt.Sprintf("Content-Length: %d\r\n", len(data)))
 	}
 
 	h.headerBuffer.WriteString("\r\n")
@@ -189,22 +181,13 @@ func (h *HTTPObfuscator) httpChunkEncode(data []byte) []byte {
 	chunkSize := len(data)
 	chunkHeader := fmt.Sprintf("%x\r\n", chunkSize)
 
-	// Get buffer from pool
-	chunkBuf := h.chunkPool.Get().([]byte)
-	defer h.chunkPool.Put(chunkBuf)
+	totalLen := len(chunkHeader) + chunkSize + len("\r\n0\r\n\r\n")
+	result := make([]byte, 0, totalLen)
+	result = append(result, chunkHeader...)
+	result = append(result, data...)
+	result = append(result, "\r\n0\r\n\r\n"...)
 
-	// Ensure sufficient capacity
-	if cap(chunkBuf) < len(chunkHeader)+chunkSize+4 {
-		chunkBuf = make([]byte, 0, len(chunkHeader)+chunkSize+4)
-	} else {
-		chunkBuf = chunkBuf[:0]
-	}
-
-	chunkBuf = append(chunkBuf, chunkHeader...)
-	chunkBuf = append(chunkBuf, data...)
-	chunkBuf = append(chunkBuf, "\r\n0\r\n\r\n"...)
-
-	return chunkBuf
+	return result
 }
 
 // httpChunkDecode decodes HTTP chunked transfer encoding

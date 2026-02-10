@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -44,12 +45,11 @@ type ECCConn struct {
 	sendCounter uint64
 	recvCounter uint64
 
-	// Obfuscation components (lazy initialized for performance)
+	// Obfuscation components
 	obfuscationEnabled bool
 	obfuscationMode    ObfuscationMode
 	obfuscationConfig  *ObfuscationConfig
 	obfuscator         obfuscator // Interface for different obfuscation strategies
-	obfuscatorInit     sync.Once
 
 	// Compression component
 	compressor compressor
@@ -77,8 +77,20 @@ func NewConn(conn net.Conn, config *Config, isClient bool) (*ECCConn, error) {
 		config.Curve = elliptic.P256()
 	}
 
+	// For Advanced obfuscation level, wrap the connection with TLS first
+	actualConn := net.Conn(conn)
+	if config.Obfuscation != nil && config.Obfuscation.Enabled &&
+		config.Obfuscation.Level == ObfuscationLevelAdvanced && config.TLS != nil {
+		tlsConn, err := WrapWithTLS(conn, config.TLS, isClient)
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("TLS wrap failed: %w", err)
+		}
+		actualConn = tlsConn
+	}
+
 	eccConn := &ECCConn{
-		conn: conn,
+		conn: actualConn, // Use the TLS-wrapped connection (or original if no TLS)
 		// Initialize object pools for performance
 		readBuffer: &sync.Pool{
 			New: func() interface{} { return make([]byte, 0, 4096) },
@@ -91,11 +103,24 @@ func NewConn(conn net.Conn, config *Config, isClient bool) (*ECCConn, error) {
 		},
 	}
 
-	// Setup obfuscation configuration (lazy initialization for performance)
+	// Setup obfuscation: initialize obfuscator eagerly with correct isClient direction
 	if config.Obfuscation != nil && config.Obfuscation.Enabled {
 		eccConn.obfuscationEnabled = true
 		eccConn.obfuscationMode = config.Obfuscation.Mode
 		eccConn.obfuscationConfig = config.Obfuscation
+		eccConn.obfuscator = createObfuscator(config.Obfuscation.Mode, config.Obfuscation, isClient)
+	}
+
+	// For Advanced WebSocket mode, perform WebSocket upgrade handshake over TLS
+	if config.Obfuscation != nil && config.Obfuscation.Enabled &&
+		config.Obfuscation.Level == ObfuscationLevelAdvanced &&
+		config.Obfuscation.Mode == ObfuscationWebSocket {
+		if wsObf, ok := eccConn.obfuscator.(*WebSocketObfuscator); ok {
+			if err := performWebSocketHandshake(actualConn, wsObf, isClient); err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("WebSocket handshake failed: %w", err)
+			}
+		}
 	}
 
 	// Setup compression
@@ -119,8 +144,8 @@ func NewConn(conn net.Conn, config *Config, isClient bool) (*ECCConn, error) {
 	}
 
 	// Set handshake timeout
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
-	defer conn.SetDeadline(time.Time{})
+	actualConn.SetDeadline(time.Now().Add(handshakeTimeout))
+	defer actualConn.SetDeadline(time.Time{})
 
 	var handshakeErr error
 	if isClient {
@@ -135,6 +160,46 @@ func NewConn(conn net.Conn, config *Config, isClient bool) (*ECCConn, error) {
 	}
 
 	return eccConn, nil
+}
+
+// performWebSocketHandshake performs the WebSocket upgrade handshake.
+// For clients, it sends the upgrade request and validates the response.
+// For servers, it receives the upgrade request and sends the response.
+func performWebSocketHandshake(conn net.Conn, wsObf *WebSocketObfuscator, isClient bool) error {
+	if isClient {
+		// Send WebSocket upgrade request
+		request, wsKey := wsObf.GenerateHandshakeRequest()
+		if _, err := conn.Write(request); err != nil {
+			return fmt.Errorf("failed to send WebSocket upgrade request: %w", err)
+		}
+		// Read and validate server's response
+		buf := make([]byte, 4096)
+		n, err := conn.Read(buf)
+		if err != nil {
+			return fmt.Errorf("failed to read WebSocket upgrade response: %w", err)
+		}
+		if err := wsObf.ValidateHandshakeResponse(buf[:n], wsKey); err != nil {
+			return fmt.Errorf("WebSocket upgrade response validation failed: %w", err)
+		}
+	} else {
+		// Read client's WebSocket upgrade request
+		buf := make([]byte, 4096)
+		n, err := conn.Read(buf)
+		if err != nil {
+			return fmt.Errorf("failed to read WebSocket upgrade request: %w", err)
+		}
+		wsKey, err := wsObf.ParseHandshakeRequest(buf[:n])
+		if err != nil {
+			return fmt.Errorf("failed to parse WebSocket upgrade request: %w", err)
+		}
+		// Send WebSocket upgrade response
+		response := wsObf.GenerateHandshakeResponse(wsKey)
+		if _, err := conn.Write(response); err != nil {
+			return fmt.Errorf("failed to send WebSocket upgrade response: %w", err)
+		}
+	}
+	wsObf.handshakeComplete = true
+	return nil
 }
 
 // clientHandshake performs the client-side handshake protocol:
@@ -326,12 +391,8 @@ func (ec *ECCConn) Read(b []byte) (int, error) {
 		return 0, err
 	}
 
-	// Initialize obfuscator if needed (lazy initialization for performance)
+	// Deobfuscate if obfuscation is enabled (obfuscator initialized in NewConn)
 	if ec.obfuscationEnabled {
-		ec.obfuscatorInit.Do(func() {
-			ec.obfuscator = createObfuscator(ec.obfuscationMode, ec.obfuscationConfig, false)
-		})
-
 		var err error
 		encryptedData, err = ec.obfuscator.deobfuscate(encryptedData)
 		if err != nil {
@@ -386,12 +447,8 @@ func (ec *ECCConn) Write(b []byte) (int, error) {
 	encrypted := ec.sendAEAD.Seal(nil, ec.sendNonce, data, nil)
 	ec.sendCounter++
 
-	// Initialize obfuscator if needed (lazy initialization for performance)
+	// Obfuscate if obfuscation is enabled (obfuscator initialized in NewConn)
 	if ec.obfuscationEnabled {
-		ec.obfuscatorInit.Do(func() {
-			ec.obfuscator = createObfuscator(ec.obfuscationMode, ec.obfuscationConfig, true)
-		})
-
 		var err error
 		encrypted, err = ec.obfuscator.obfuscate(encrypted)
 		if err != nil {
