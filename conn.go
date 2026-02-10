@@ -20,7 +20,7 @@ import (
 const (
 	nonceSize        = 12
 	keySize          = 32
-	maxMessageSize   = 64 * 1024
+	maxMessageSize   = 64 * 1024 * 1024
 	handshakeTimeout = 10 * time.Second
 )
 
