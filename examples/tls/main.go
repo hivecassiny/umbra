@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	fmt.Println("━━━ Umbra: Advanced TLS + Obfuscation Demo ━━━\n")
+	fmt.Println("━━━ Umbra: Advanced TLS + Obfuscation Demo ━━━")
 
 	// Generate self-signed certificate
 	certPEM, keyPEM, err := umbra.GenerateSelfSignedCert([]string{"demo.example.com"})
@@ -118,7 +118,7 @@ func main() {
 	wg.Wait()
 
 	// Also demonstrate ECDSA cert
-	fmt.Println("━━━ ECDSA Certificate Demo ━━━\n")
+	fmt.Println("━━━ ECDSA Certificate Demo ━━━")
 
 	ecdsaCert, ecdsaKey, err := umbra.GenerateSelfSignedCertECDSA([]string{"ecdsa.example.com"})
 	if err != nil {

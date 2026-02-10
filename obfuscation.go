@@ -104,7 +104,7 @@ func newHTTPObfuscator(config *ObfuscationConfig, isClient bool) *HTTPObfuscator
 	// Generate appropriate headers
 	domain := config.Domain
 	if domain == "" {
-		domain = "cdn.google.com"
+		domain = "cdn.example.com"
 	}
 
 	if isClient {
@@ -314,7 +314,7 @@ func defaultObfuscationConfig() *ObfuscationConfig {
 	return &ObfuscationConfig{
 		Enabled:       true,
 		Mode:          ObfuscationHTTPS,
-		Domain:        "cdn.google.com",
+		Domain:        "cdn.example.com",
 		MinDelayMs:    5,
 		MaxDelayMs:    50,
 		MinPacketSize: 128,

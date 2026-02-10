@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	fmt.Println("━━━ Umbra: Compression Demo ━━━\n")
+	fmt.Println("━━━ Umbra: Compression Demo ━━━")
 
 	// Test data: a repetitive JSON payload (compresses well)
 	testData := strings.Repeat(`{"worker":"rig-001","hashrate":125000,"temp":65,"fan":80},`, 20)

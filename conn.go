@@ -73,8 +73,10 @@ func NewConn(conn net.Conn, config *Config, isClient bool) (*ECCConn, error) {
 	if config == nil {
 		config = &Config{Curve: elliptic.P256()}
 	}
-	if config.Curve == nil {
-		config.Curve = elliptic.P256()
+	// Use local curve to avoid mutating caller's config (data race)
+	curve := config.Curve
+	if curve == nil {
+		curve = elliptic.P256()
 	}
 
 	// For Advanced obfuscation level, wrap the connection with TLS first
@@ -136,7 +138,7 @@ func NewConn(conn net.Conn, config *Config, isClient bool) (*ECCConn, error) {
 	if config.PrivateKey != nil && !config.UseEphemeralKey {
 		eccConn.privKey = config.PrivateKey
 	} else {
-		privKey, err := ecdsa.GenerateKey(config.Curve, rand.Reader)
+		privKey, err := ecdsa.GenerateKey(curve, rand.Reader)
 		if err != nil {
 			return nil, err
 		}
@@ -321,15 +323,28 @@ func (ec *ECCConn) deriveKeys(sharedSecret []byte, isClient bool) error {
 	salt := []byte("ecc-socket-salt")
 
 	var sendKey, recvKey []byte
+	var err error
 
 	if isClient {
 		// Client: use "client_key" for sending, "server_key" for receiving
-		sendKey = deriveKey(sharedSecret, salt, []byte("client_key"))
-		recvKey = deriveKey(sharedSecret, salt, []byte("server_key"))
+		sendKey, err = deriveKey(sharedSecret, salt, []byte("client_key"))
+		if err != nil {
+			return err
+		}
+		recvKey, err = deriveKey(sharedSecret, salt, []byte("server_key"))
+		if err != nil {
+			return err
+		}
 	} else {
 		// Server: use "server_key" for sending, "client_key" for receiving
-		sendKey = deriveKey(sharedSecret, salt, []byte("server_key"))
-		recvKey = deriveKey(sharedSecret, salt, []byte("client_key"))
+		sendKey, err = deriveKey(sharedSecret, salt, []byte("server_key"))
+		if err != nil {
+			return err
+		}
+		recvKey, err = deriveKey(sharedSecret, salt, []byte("client_key"))
+		if err != nil {
+			return err
+		}
 	}
 
 	// Initialize AEAD ciphers
@@ -366,7 +381,11 @@ func (ec *ECCConn) Read(b []byte) (int, error) {
 	// If there's pending data from a previous read, return it first
 	if len(ec.pendingData) > 0 {
 		n := copy(b, ec.pendingData)
-		ec.pendingData = ec.pendingData[n:]
+		if n < len(ec.pendingData) {
+			ec.pendingData = ec.pendingData[n:]
+		} else {
+			ec.pendingData = nil // Release memory when fully consumed
+		}
 		return n, nil
 	}
 
@@ -384,6 +403,11 @@ func (ec *ECCConn) Read(b []byte) (int, error) {
 	}
 
 	length := binary.BigEndian.Uint32(header[1:5])
+
+	// Validate message size to prevent memory exhaustion
+	if length > maxMessageSize {
+		return 0, fmt.Errorf("message too large: %d bytes (max %d)", length, maxMessageSize)
+	}
 
 	// Read encrypted data
 	encryptedData := make([]byte, length)
@@ -420,7 +444,7 @@ func (ec *ECCConn) Read(b []byte) (int, error) {
 	n := copy(b, plaintext)
 	// Store any remaining data for next read
 	if n < len(plaintext) {
-		ec.pendingData = append(ec.pendingData, plaintext[n:]...)
+		ec.pendingData = append(ec.pendingData[:0], plaintext[n:]...)
 	}
 	return n, nil
 }
@@ -430,13 +454,13 @@ func (ec *ECCConn) Read(b []byte) (int, error) {
 // The nonce is updated for each message to ensure uniqueness.
 func (ec *ECCConn) Write(b []byte) (int, error) {
 	ec.writeMu.Lock()
+	defer ec.writeMu.Unlock()
 
 	// Compress if enabled
 	data := b
 	if ec.compressor != nil {
 		compressed, err := ec.compressor.compress(b)
 		if err != nil {
-			ec.writeMu.Unlock()
 			return 0, err
 		}
 		data = compressed
@@ -471,7 +495,6 @@ func (ec *ECCConn) Write(b []byte) (int, error) {
 	msgBuf[0] = msgTypeEncrypted
 	binary.BigEndian.PutUint32(msgBuf[1:5], uint32(len(encrypted)))
 	copy(msgBuf[5:], encrypted)
-	ec.writeMu.Unlock()
 
 	_, err := ec.conn.Write(msgBuf)
 	if err != nil {

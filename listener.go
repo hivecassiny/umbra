@@ -57,7 +57,12 @@ func Dial(network, address string, config *Config) (*ECCConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewConn(conn, config, true)
+	eccConn, err := NewConn(conn, config, true)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return eccConn, nil
 }
 
 // DialTimeout establishes an encrypted connection to the specified network address with timeout.
@@ -66,7 +71,12 @@ func DialTimeout(timeout time.Duration, network, address string, config *Config)
 	if err != nil {
 		return nil, err
 	}
-	return NewConn(conn, config, true)
+	eccConn, err := NewConn(conn, config, true)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return eccConn, nil
 }
 
 // Listen creates a listener for encrypted connections on the specified network address.

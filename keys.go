@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 
 	"golang.org/x/crypto/hkdf"
@@ -82,9 +83,11 @@ func DecodePublicKey(pemData string) (*ecdsa.PublicKey, error) {
 
 // deriveKey is a helper function that uses HKDF to derive a key of keySize bytes
 // from the secret using the provided salt and info parameters.
-func deriveKey(secret, salt, info []byte) []byte {
+func deriveKey(secret, salt, info []byte) ([]byte, error) {
 	hkdf := hkdf.New(sha256.New, secret, salt, info)
 	key := make([]byte, keySize)
-	io.ReadFull(hkdf, key)
-	return key
+	if _, err := io.ReadFull(hkdf, key); err != nil {
+		return nil, fmt.Errorf("HKDF key derivation failed: %w", err)
+	}
+	return key, nil
 }

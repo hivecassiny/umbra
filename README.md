@@ -1,4 +1,4 @@
-# ECC Socket - Secure Communication Library with DPI Bypass
+# Umbra - Secure Communication Library with DPI Bypass
 
 [![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
