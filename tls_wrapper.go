@@ -21,13 +21,18 @@ type TLSConfig struct {
 	// ===== Server Configuration =====
 
 	// CertPEM is the PEM-encoded certificate for TLS.
-	// Required for server-side advanced obfuscation.
+	// Required for server-side advanced obfuscation (manual mode).
 	// You can generate a self-signed cert using GenerateSelfSignedCert().
 	CertPEM string
 
 	// KeyPEM is the PEM-encoded private key for TLS.
-	// Required for server-side advanced obfuscation.
+	// Required for server-side advanced obfuscation (manual mode).
 	KeyPEM string
+
+	// CustomTLSConfig allows providing a pre-built *tls.Config (e.g., from CertMagic).
+	// When set, CertPEM/KeyPEM are ignored for the server side and this config is used instead.
+	// This enables dynamic certificate management (auto-renewal).
+	CustomTLSConfig *tls.Config
 
 	// ===== Client Configuration =====
 
@@ -104,26 +109,42 @@ func wrapClientTLS(conn net.Conn, config *TLSConfig) (net.Conn, error) {
 
 // wrapServerTLS wraps a connection as TLS server
 func wrapServerTLS(conn net.Conn, config *TLSConfig) (net.Conn, error) {
-	if config.CertPEM == "" || config.KeyPEM == "" {
-		return nil, fmt.Errorf("server TLS requires CertPEM and KeyPEM")
-	}
+	var tlsConfig *tls.Config
 
-	cert, err := tls.X509KeyPair([]byte(config.CertPEM), []byte(config.KeyPEM))
-	if err != nil {
-		return nil, fmt.Errorf("failed to load certificate: %w", err)
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-		MaxVersion:   tls.VersionTLS13,
-	}
-
-	// Set ALPN protocols
-	if len(config.ALPNProtos) > 0 {
-		tlsConfig.NextProtos = config.ALPNProtos
+	if config.CustomTLSConfig != nil {
+		// Use custom TLS config (e.g., from CertMagic for auto-renewal)
+		tlsConfig = config.CustomTLSConfig.Clone()
+		tlsConfig.MinVersion = tls.VersionTLS12
+		tlsConfig.MaxVersion = tls.VersionTLS13
+		// Set ALPN protocols
+		if len(config.ALPNProtos) > 0 {
+			tlsConfig.NextProtos = config.ALPNProtos
+		} else if len(tlsConfig.NextProtos) == 0 {
+			tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+		}
 	} else {
-		tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+		// Use static CertPEM/KeyPEM (manual mode)
+		if config.CertPEM == "" || config.KeyPEM == "" {
+			return nil, fmt.Errorf("server TLS requires CertPEM and KeyPEM")
+		}
+
+		cert, err := tls.X509KeyPair([]byte(config.CertPEM), []byte(config.KeyPEM))
+		if err != nil {
+			return nil, fmt.Errorf("failed to load certificate: %w", err)
+		}
+
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+			MaxVersion:   tls.VersionTLS13,
+		}
+
+		// Set ALPN protocols
+		if len(config.ALPNProtos) > 0 {
+			tlsConfig.NextProtos = config.ALPNProtos
+		} else {
+			tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+		}
 	}
 
 	tlsConn := tls.Server(conn, tlsConfig)
