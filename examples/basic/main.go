@@ -77,13 +77,16 @@ func main() {
 		c.Write([]byte(msg))
 
 		buf := make([]byte, 1024)
+
 		n, err := c.Read(buf)
 		if err != nil {
 			log.Fatal("Read error:", err)
 		}
+
 		fmt.Printf("   [%d] Reply:   %s\n\n", i+1, string(buf[:n]))
 
 		time.Sleep(100 * time.Millisecond)
+
 	}
 
 	fmt.Println("✅ Done!")
