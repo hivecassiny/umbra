@@ -116,11 +116,20 @@ func wrapServerTLS(conn net.Conn, config *TLSConfig) (net.Conn, error) {
 		tlsConfig = config.CustomTLSConfig.Clone()
 		tlsConfig.MinVersion = tls.VersionTLS12
 		tlsConfig.MaxVersion = tls.VersionTLS13
-		// Set ALPN protocols
-		if len(config.ALPNProtos) > 0 {
-			tlsConfig.NextProtos = config.ALPNProtos
-		} else if len(tlsConfig.NextProtos) == 0 {
-			tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+		// Merge ALPN protocols: preserve CertMagic's existing protocols (e.g. acme-tls/1)
+		// while ensuring required protocols are present for client compatibility.
+		toMerge := config.ALPNProtos
+		if len(toMerge) == 0 {
+			toMerge = []string{"h2", "http/1.1"}
+		}
+		existing := make(map[string]bool, len(tlsConfig.NextProtos))
+		for _, p := range tlsConfig.NextProtos {
+			existing[p] = true
+		}
+		for _, p := range toMerge {
+			if !existing[p] {
+				tlsConfig.NextProtos = append(tlsConfig.NextProtos, p)
+			}
 		}
 	} else {
 		// Use static CertPEM/KeyPEM (manual mode)
